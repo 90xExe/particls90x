@@ -1,0 +1,195 @@
+using System;
+using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Runtime.InteropServices;
+using System.Windows.Forms;
+using static TestAcrylicBlur.EffectBlur;
+
+namespace BYTE_AGUN
+{
+    public partial class main : Form
+    {
+        private const int ParticleCount = 100;
+        private const int DrawCount = 90; // Number of particles to draw
+        private readonly Random _random = new Random();
+        private readonly PointF[] _particlePositions = new PointF[ParticleCount];
+        private readonly PointF[] _particleTargetPositions = new PointF[ParticleCount];
+        private readonly float[] _particleSpeeds = new float[ParticleCount];
+        private readonly float[] _particleSizes = new float[ParticleCount];
+        private readonly float[] _particleRadii = new float[ParticleCount];
+        private readonly float[] _particleRotations = new float[ParticleCount];
+        private readonly PointF[] _vertices = new PointF[3]; // Reuse vertices array
+        public main()
+        {
+            EnableTransparent();
+            InitializeComponent();
+            InitializeParticles();
+            this.AutoScaleMode = AutoScaleMode.Dpi;
+            this.AutoSize = true;
+            this.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            DoubleBuffered = true;
+            this.MinimumSize = new Size(934, 603);
+
+            Timer timer = new Timer
+            {
+                Interval = 3 // Roughly 60 FPS
+            };
+            timer.Tick += (sender, args) =>
+            {
+                UpdateParticles();
+                Invalidate(); // Causes the form to be redrawn
+            };
+            timer.Start();
+
+            this.SetStyle(ControlStyles.AllPaintingInWmPaint, true);
+            this.SetStyle(ControlStyles.DoubleBuffer, true);
+        }
+
+        private void main_Load(object sender, EventArgs e)
+        {
+
+        }
+        [DllImport("user32.dll")]
+        internal static extern int SetWindowCompositionAttribute(IntPtr hwnd, ref WindowCompositionAttributeData data);
+
+        private uint _blurOpacity = 0x9999999;
+
+        public double BlurOpacity
+        {
+            get { return _blurOpacity; }
+            set { _blurOpacity = (uint)value; EnableTransparent(); }
+        }
+
+        private uint _blurBackgroundColor = 0x11111111; // Modify the background color if needed
+
+        internal void EnableTransparent()
+        {
+            var accent = new AccentPolicy();
+            accent.AccentState = AccentState.ACCENT_ENABLE_ACRYLICBLURBEHIND;
+            accent.GradientColor = (_blurOpacity << 24) | (_blurBackgroundColor & 0xFFFFFF);
+            var accentStructSize = Marshal.SizeOf(accent);
+            var accentPtr = Marshal.AllocHGlobal(accentStructSize);
+            Marshal.StructureToPtr(accent, accentPtr, false);
+            var data = new WindowCompositionAttributeData();
+            data.Attribute = WindowCompositionAttribute.WCA_ACCENT_POLICY;
+            data.SizeOfData = accentStructSize;
+            data.Data = accentPtr;
+            SetWindowCompositionAttribute(this.Handle, ref data);
+            Marshal.FreeHGlobal(accentPtr);
+        }
+        private void InitializeParticles()
+        {
+            Size screenSize = Screen.PrimaryScreen.Bounds.Size;
+            for (int i = 0; i < ParticleCount; i++)
+            {
+                _particlePositions[i] = new PointF(0, 0);
+                _particleTargetPositions[i] = new PointF(_random.Next(screenSize.Width), screenSize.Height * 2);
+                _particleSpeeds[i] = 1 + _random.Next(25);
+                _particleSizes[i] = _random.Next(8);
+                _particleRadii[i] = _random.Next(4);
+                _particleRotations[i] = 0;
+            }
+        }
+
+        private void UpdateParticles()
+        {
+            Size screenSize = Screen.PrimaryScreen.Bounds.Size;
+            for (int i = 0; i < ParticleCount; i++)
+            {
+                if (_particlePositions[i].X == 0 || _particlePositions[i].Y == 0)
+                {
+                    _particlePositions[i] = new PointF(_random.Next(screenSize.Width + 1), 15f);
+                    _particleSpeeds[i] = 1 + _random.Next(25);
+                    _particleRadii[i] = _random.Next(4);
+                    _particleSizes[i] = _random.Next(8);
+                    _particleTargetPositions[i] = new PointF(_random.Next(screenSize.Width), screenSize.Height * 2);
+                }
+
+                float deltaTime = 1.0f / 60; // Assuming 60 FPS
+                _particlePositions[i] = Lerp(_particlePositions[i], _particleTargetPositions[i], deltaTime * (_particleSpeeds[i] / 60));
+                _particleRotations[i] += deltaTime;
+
+                if (_particlePositions[i].Y > screenSize.Height)
+                {
+                    _particlePositions[i] = new PointF(0, 0);
+                    _particleRotations[i] = 0;
+                }
+            }
+        }
+
+        private PointF Lerp(PointF start, PointF end, float t)
+        {
+            return new PointF(start.X + (end.X - start.X) * t, start.Y + (end.Y - start.Y) * t);
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+
+            e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.HighQuality;
+
+            for (int i = 0; i < DrawCount; i++)
+            {
+                // Call the DrawHeartWithGlow method directly, passing the appropriate parameters
+                DrawHeartWithGlow(e.Graphics, _particlePositions[i], _particleSizes[i], _particleRotations[i]);
+            }
+
+            e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            e.Graphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+            e.Graphics.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighQuality;
+            e.Graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
+        }
+        private void DrawHeartWithGlow(Graphics graphics, PointF position, float size, float rotation)
+        {
+            graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+
+            // Draw glow effect
+            int maxGlowLayers = 10;
+            for (int j = 0; j < maxGlowLayers; j++)
+            {
+                int alpha = 25 - 2 * j; // Gradually decrease alpha for each layer
+                using (Brush glowBrush = new SolidBrush(Color.FromArgb(alpha, 218, 10, 255))) // Glow color: RGB (218, 10, 255)
+                {
+                    float glowSize = size + j * 2; // Gradually increase the glow size
+                    graphics.FillEllipse(glowBrush, position.X - glowSize / 2, position.Y - glowSize / 2, glowSize, glowSize);
+                }
+
+
+                // Draw heart shape
+                using (GraphicsPath path = new GraphicsPath())
+                {
+                    // Define the heart shape using Bezier curves
+                    path.AddBezier(position.X, position.Y + size / 4, position.X - size / 2, position.Y - size / 2, position.X + size / 2, position.Y - size / 2, position.X, position.Y + size / 4);
+                    path.AddBezier(position.X, position.Y + size / 4, position.X - size / 2, position.Y + size, position.X + size / 2, position.Y + size, position.X, position.Y + size / 4);
+
+                    using (Brush brush = new SolidBrush(Color.FromArgb(140, 11, 214))) // Heart color: RGB (140, 11, 214)
+                    {
+                        graphics.FillPath(brush, path);
+                    }
+                }
+
+                PointF[] triangleVertices = new PointF[]
+                {
+               new PointF(position.X, position.Y - size / 2),
+               new PointF(position.X - size / 2, position.Y + size / 2),
+               new PointF(position.X + size / 2, position.Y + size / 2)
+                };
+
+
+
+
+                // Draw triangle
+                using (Brush brush = new SolidBrush(Color.FromArgb(140, 11, 214))) // Triangle color
+                {
+                    graphics.FillPolygon(brush, triangleVertices);
+                }
+                using (Brush brush = new SolidBrush(Color.FromArgb(140, 11, 214))) // Square color
+                {
+                    graphics.FillRectangle(brush, position.X - size / 2, position.Y - size / 2, size, size);
+                }
+            }
+        }
+    }
+}
+
+            

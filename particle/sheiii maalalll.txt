@@ -1,0 +1,228 @@
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Data;
+using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Linq;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+using static TestAcrylicBlur.EffectBlur;
+
+namespace @byte
+{
+    public partial class Form1 : Form
+    {
+        private const int ParticleCount = 100;
+        private const int DrawCount = 90; // Number of particles to draw
+        private readonly Random _random = new Random();
+        private readonly PointF[] _particlePositions = new PointF[ParticleCount];
+        private readonly PointF[] _particleTargetPositions = new PointF[ParticleCount];
+        private readonly float[] _particleSpeeds = new float[ParticleCount];
+        private readonly float[] _particleSizes = new float[ParticleCount];
+        private readonly float[] _particleRadii = new float[ParticleCount];
+        private readonly float[] _particleRotations = new float[ParticleCount];
+
+        public Form1()
+        {
+            InitializeComponent();
+            InitializeParticles();
+            EnableTransparent();
+
+            DoubleBuffered = true;
+            this.MinimumSize = new Size(337, 421);
+
+            Timer timer = new Timer
+            {
+                Interval = 3 // Roughly 60 FPS
+            };
+            timer.Tick += (sender, args) =>
+            {
+                UpdateParticles();
+                Invalidate(); // Causes the form to be redrawn
+            };
+            timer.Start();
+        }
+
+        private void UpdateParticles()
+        {
+            Size screenSize = Screen.PrimaryScreen.Bounds.Size;
+            for (int i = 0; i < ParticleCount; i++)
+            {
+                if (_particlePositions[i].X == 0 || _particlePositions[i].Y == 0)
+                {
+                    _particlePositions[i] = new PointF(_random.Next(screenSize.Width + 1), 15f);
+                    _particleSpeeds[i] = 1 + _random.Next(25);
+                    _particleRadii[i] = _random.Next(4);
+                    _particleSizes[i] = 20 + _random.Next(20); // Adjusted for larger size
+                    _particleTargetPositions[i] = new PointF(_random.Next(screenSize.Width), screenSize.Height * 2);
+                }
+
+                float deltaTime = 1.0f / 60; // Assuming 60 FPS
+                _particlePositions[i] = Lerp(_particlePositions[i], _particleTargetPositions[i], deltaTime * (_particleSpeeds[i] / 60));
+                _particleRotations[i] += deltaTime;
+
+                if (_particlePositions[i].Y > screenSize.Height)
+                {
+                    _particlePositions[i] = new PointF(0, 0);
+                    _particleRotations[i] = 0;
+                }
+            }
+        }
+
+        private void InitializeParticles()
+        {
+            Size screenSize = Screen.PrimaryScreen.Bounds.Size;
+            for (int i = 0; i < ParticleCount; i++)
+            {
+                _particlePositions[i] = new PointF(0, 0);
+                _particleTargetPositions[i] = new PointF(_random.Next(screenSize.Width), screenSize.Height * 2);
+                _particleSpeeds[i] = 1 + _random.Next(25);
+                _particleSizes[i] = 20 + _random.Next(20); // Adjusted for larger size
+                _particleRadii[i] = _random.Next(4);
+                _particleRotations[i] = 0;
+            }
+        }
+
+        private PointF Lerp(PointF start, PointF end, float t)
+        {
+            return new PointF(start.X + (end.X - start.X) * t, start.Y + (end.Y - start.Y) * t);
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+
+            e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.HighQuality;
+
+            for (int i = 0; i < DrawCount; i++)
+            {
+                // Draw the heart shape with glow effect
+                DrawHeartWithGlow(e.Graphics, _particlePositions[i], _particleSizes[i], _particleRotations[i]);
+            }
+        }
+
+
+
+
+        private void DrawHeartWithGlow(Graphics graphics, PointF position, float size, float rotation)
+        {
+            // Define the points for a rounded heart shape using Bezier curves
+            using (GraphicsPath path = new GraphicsPath())
+            {
+                // Define the heart shape using Bezier curves
+                path.AddBezier(position.X - size / 2, position.Y,
+                               position.X - size / 2, position.Y - size / 2,
+                               position.X, position.Y - size,
+                               position.X + size / 2, position.Y - size);
+
+                path.AddBezier(position.X + size / 2, position.Y - size,
+                               position.X + size / 2, position.Y - size / 2,
+                               position.X, position.Y,
+                               position.X - size / 2, position.Y);
+
+                // Rotate and translate the heart shape
+                using (Matrix matrix = new Matrix())
+                {
+                    matrix.RotateAt(rotation * (180 / (float)Math.PI), position); // Rotate around the center
+                    matrix.Translate(position.X, position.Y); // Translate to the position
+
+                    // Apply the transformation to the path
+                    path.Transform(matrix);
+
+                    // Draw the glow effect
+                    using (GraphicsPath glowPath = (GraphicsPath)path.Clone()) // Clone path for glow
+                    {
+                        glowPath.AddPath(path, false);
+                        glowPath.Widen(new Pen(Color.Transparent, size / 6)); // Adjust the size to control the glow width
+
+                        using (PathGradientBrush pathGradientBrush = new PathGradientBrush(glowPath))
+                        {
+                            // Set the center color to transparent (no glow in the center)
+                            pathGradientBrush.CenterColor = Color.FromArgb(0, 255, 0, 0); // Transparent red
+                                                                                          // Set the surrounding color to red (glow color)
+                            pathGradientBrush.SurroundColors = new Color[] { Color.FromArgb(80, 255, 0, 0) }; // Subtle red glow
+
+                            // Apply a larger radius for the gradient to simulate border glow
+                            pathGradientBrush.FocusScales = new PointF(1.2f, 1.2f); // Adjust to control the glow size
+
+                            graphics.FillPath(pathGradientBrush, glowPath);
+                        }
+                    }
+
+                    // Draw the heart shape on top
+                    using (Brush brush = new SolidBrush(Color.FromArgb(255, 255, 0, 0))) // Heart color: RGB(255, 0, 0) (Red)
+                    {
+                        graphics.FillPath(brush, path);
+                    }
+                }
+            }
+        }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        [DllImport("user32.dll")]
+        internal static extern int SetWindowCompositionAttribute(IntPtr hwnd, ref WindowCompositionAttributeData data);
+
+        private uint _blurOpacity;
+
+        public double BlurOpacity
+        {
+            get { return _blurOpacity; }
+            set { _blurOpacity = (uint)value; EnableTransparent(); }
+        }
+
+        private uint _blurBackgroundColor = 0x990000;
+
+        internal void EnableTransparent()
+        {
+
+            var accent = new AccentPolicy();
+            accent.AccentState = AccentState.ACCENT_ENABLE_ACRYLICBLURBEHIND;
+            //     accent.GradientColor = (_blurOpacity << 24) | (_blurBackgroundColor & 0xFFFFFF);
+            var accentStructSize = Marshal.SizeOf(accent);
+            var accentPtr = Marshal.AllocHGlobal(accentStructSize);
+            Marshal.StructureToPtr(accent, accentPtr, false);
+            var data = new WindowCompositionAttributeData();
+            data.Attribute = WindowCompositionAttribute.WCA_ACCENT_POLICY;
+            data.SizeOfData = accentStructSize;
+            data.Data = accentPtr;
+            SetWindowCompositionAttribute(this.Handle, ref data);
+            Marshal.FreeHGlobal(accentPtr);
+        }
+        private void Form1_Load(object sender, EventArgs e)
+        {
+
+        }
+    }
+
+}
+

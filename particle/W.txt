@@ -1,0 +1,200 @@
+using System;
+using System.Collections.Generic;
+using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Windows.Forms;
+
+namespace HDN_REGEDIT
+{
+    public partial class Form1 : Form
+    {
+        private List<Particle> particles = new List<Particle>();
+        private Timer timer;
+        private Random rand = new Random();
+        private const int ParticleCount = 30;
+        private const float BaseSpeed = 2.0f;
+        private Color starColor = Color.FromArgb(144, 2, 176);
+        private Color sparkleColor = Color.FromArgb(204, 59, 237);
+        private int particleIndex = 0;
+        private int frameCount = 0;
+
+        public Form1()
+        {
+            InitializeComponent();
+            this.DoubleBuffered = true;
+            this.Width = 1002;
+            this.Height = 568;
+            InitializeParticles();
+
+            timer = new Timer();
+            timer.Interval = 30;
+            timer.Tick += Timer_Tick;
+            timer.Start();
+        }
+
+        private void Form1_Load(object sender, EventArgs e)
+        {
+        }
+
+        private void InitializeParticles()
+        {
+            for (int i = 0; i < ParticleCount; i++)
+            {
+                particles.Add(CreateHeptagramParticle());
+            }
+        }
+
+        private Particle CreateHeptagramParticle()
+        {
+            float size = rand.Next(10, 20);
+            float startX = this.Width / 2; // Start from the center of the form
+            float startY = this.Height / 2; // Start from the center of the form
+            float speedModifier = (float)(rand.NextDouble() * 0.5 + 0.75);
+            float direction = (float)(rand.NextDouble() * 2 * Math.PI); // Random direction in radians
+            Color color = sparkleColor;
+            return new Particle(startX, startY, size, color, speedModifier, direction, ShapeType.Heptagram);
+        }
+
+        private void Timer_Tick(object sender, EventArgs e)
+        {
+            frameCount++;
+
+            if (frameCount % 10 == 0 && particleIndex < particles.Count)
+            {
+                particles[particleIndex].Active = true;
+                particleIndex++;
+            }
+
+            foreach (var particle in particles)
+            {
+                if (particle.Active)
+                {
+                    particle.Update(BaseSpeed, this.Width, this.Height);
+                    if (particle.Position.X > this.Width || particle.Position.Y > this.Height || particle.Position.X < 0 || particle.Position.Y < 0)
+                    {
+                        float size = rand.Next(10, 20);
+                        particle.Position = new PointF(this.Width / 2, this.Height / 2);
+                        particle.Size = size;
+                        particle.GlowIntensity = rand.Next(100, 200);
+                        particle.Direction = (float)(rand.NextDouble() * 2 * Math.PI); // Reset direction
+                    }
+                    if (particle.Shape == ShapeType.Heptagram)
+                    {
+                        particle.Color = starColor;
+                    }
+                }
+            }
+
+            this.Invalidate();
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+            foreach (var particle in particles)
+            {
+                if (particle.Active)
+                {
+                    particle.Draw(e.Graphics);
+                }
+            }
+        }
+
+        public class Particle
+        {
+            public PointF Position { get; set; }
+            public float Size { get; set; }
+            public Color Color { get; set; }
+            public float SpeedModifier { get; set; }
+            public bool Active { get; set; } = false;
+            public int GlowIntensity { get; set; } = 100;
+            private float angle = 0;
+            public float Direction { get; set; }
+            public ShapeType Shape { get; set; }
+
+            public Particle(float x, float y, float size, Color color, float speedModifier, float direction, ShapeType shape)
+            {
+                Position = new PointF(x, y);
+                Size = size;
+                Color = color;
+                SpeedModifier = speedModifier;
+                Direction = direction;
+                Shape = shape;
+            }
+
+            public void Update(float baseSpeed, int formWidth, int formHeight)
+            {
+                float dx = (float)(Math.Cos(Direction) * baseSpeed * SpeedModifier);
+                float dy = (float)(Math.Sin(Direction) * baseSpeed * SpeedModifier);
+                Position = new PointF(Position.X + dx, Position.Y + dy);
+                angle += 0.05f;
+            }
+
+            public void Draw(Graphics g)
+            {
+                if (Shape == ShapeType.Heptagram)
+                {
+                    using (GraphicsPath path = CreatePath(Position.X, Position.Y, Size, Shape))
+                    {
+                        using (PathGradientBrush brush = new PathGradientBrush(path))
+                        {
+                            brush.CenterColor = Color.FromArgb(GlowIntensity, Color);
+                            brush.SurroundColors = new Color[] { Color.FromArgb(0, Color) };
+                            g.FillPath(brush, path);
+                        }
+
+                        g.TranslateTransform(Position.X, Position.Y);
+                        g.RotateTransform(angle);
+                        g.TranslateTransform(-Position.X, -Position.Y);
+                        using (Pen pen = new Pen(Color.FromArgb(150, Color), 0.5f))
+                        {
+                            g.DrawPath(pen, path);
+                        }
+                        g.ResetTransform();
+                    }
+                }
+            }
+
+            private GraphicsPath CreatePath(float x, float y, float size, ShapeType shape)
+            {
+                switch (shape)
+                {
+                    case ShapeType.Heptagram:
+                        return CreateHeptagramPath(x, y, size);
+                    default:
+                        return new GraphicsPath();
+                }
+            }
+
+            private GraphicsPath CreateHeptagramPath(float x, float y, float size)
+            {
+                GraphicsPath path = new GraphicsPath();
+                int numPoints = 7;
+                float radius = size / 2;
+                PointF[] points = new PointF[numPoints * 2];
+
+                for (int i = 0; i < numPoints * 2; i++)
+                {
+                    float angle = (float)(i * Math.PI / numPoints);
+                    float currentRadius = i % 2 == 0 ? radius : radius / 2;
+                    points[i] = new PointF(
+                        x + currentRadius * (float)Math.Cos(angle),
+                        y + currentRadius * (float)Math.Sin(angle)
+                    );
+                }
+
+                path.AddPolygon(points);
+                return path;
+            }
+        }
+
+        public enum ShapeType
+        {
+            Heptagram
+        }
+
+        private void timer1_Tick(object sender, EventArgs e)
+        {
+        }
+    }
+}

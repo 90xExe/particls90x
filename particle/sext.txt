@@ -1,0 +1,235 @@
+using System;
+using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Runtime.InteropServices;
+using System.Windows.Forms;
+using static TestAcrylicBlur.EffectBlur;
+
+namespace HDN_VIP
+{
+    public partial class main : Form
+    {
+        private const int ParticleCount = 20; // Number of particles
+        private PointF[] particlePositions = new PointF[ParticleCount];
+        private float[] particleSpeedsX = new float[ParticleCount];
+        private float[] particleSpeedsY = new float[ParticleCount];
+        private float[] particleAngles = new float[ParticleCount];
+        private float[] particleRotationSpeeds = new float[ParticleCount];
+        private float[] particleSizes = new float[ParticleCount];
+        private bool[] isSparking = new bool[ParticleCount];
+        private int currentParticleIndex = 0; // Index of the current particle to fall
+        private Random rand = new Random();
+        private Timer timer;
+        private Timer particleTimer; // Timer to control the release of particles
+
+        public main()
+        {
+            InitializeComponent();
+            this.DoubleBuffered = true; // Enable double buffering
+            InitializeParticles();
+        }
+
+        private void main_Load(object sender, EventArgs e)
+        {
+            timer = new Timer();
+            timer.Interval = 16; // ~60 FPS
+            timer.Tick += Timer_Tick;
+            timer.Start();
+
+            particleTimer = new Timer();
+            particleTimer.Interval = 500; // Delay between particles
+            particleTimer.Tick += ParticleTimer_Tick;
+            particleTimer.Start();
+
+            EnableTransparent();
+        }
+
+        [DllImport("user32.dll")]
+        internal static extern int SetWindowCompositionAttribute(IntPtr hwnd, ref WindowCompositionAttributeData data);
+
+        private uint _blurOpacity;
+
+        public double BlurOpacity
+        {
+            get { return _blurOpacity; }
+            set { _blurOpacity = (uint)value; EnableTransparent(); }
+        }
+
+        private uint _blurBackgroundColor = 0x990000;
+
+        internal void EnableTransparent()
+        {
+            var accent = new AccentPolicy();
+            accent.AccentState = AccentState.ACCENT_ENABLE_ACRYLICBLURBEHIND;
+            var accentStructSize = Marshal.SizeOf(accent);
+            var accentPtr = Marshal.AllocHGlobal(accentStructSize);
+            Marshal.StructureToPtr(accent, accentPtr, false);
+            var data = new WindowCompositionAttributeData();
+            data.Attribute = WindowCompositionAttribute.WCA_ACCENT_POLICY;
+            data.SizeOfData = accentStructSize;
+            data.Data = accentPtr;
+            SetWindowCompositionAttribute(this.Handle, ref data);
+            Marshal.FreeHGlobal(accentPtr);
+        }
+
+        private void Timer_Tick(object sender, EventArgs e)
+        {
+            for (int i = 0; i < ParticleCount; i++)
+            {
+                if (rand.NextDouble() < 0.05) // 5% chance for a particle to spark each frame
+                {
+                    isSparking[i] = true;
+                }
+                else
+                {
+                    isSparking[i] = false;
+                }
+            }
+
+            this.Invalidate(); // Invalidate the form to trigger OnPaint
+        }
+
+        private void ParticleTimer_Tick(object sender, EventArgs e)
+        {
+            int particlesToActivate = rand.Next(1, 3); // Randomly choose between 1 to 2 particles to activate
+
+            for (int i = 0; i < particlesToActivate; i++)
+            {
+                if (currentParticleIndex < ParticleCount)
+                {
+                    // Activate the next particle
+                    particlePositions[currentParticleIndex] = new PointF(
+                        (float)rand.NextDouble() * ClientSize.Width, // Random X position across the top
+                        0 // Start from the top of the form
+                    );
+                    particleSpeedsX[currentParticleIndex] = (float)(rand.NextDouble() * 2 - 1); // Small X movement
+                    particleSpeedsY[currentParticleIndex] = (float)(rand.NextDouble() * 2 + 2); // Downward movement
+                    particleSizes[currentParticleIndex] = (float)(rand.NextDouble() * 4 + 4); // Varying size
+                    currentParticleIndex++;
+                }
+                else
+                {
+                    particleTimer.Stop(); // Stop the timer when all particles are released
+                    break;
+                }
+            }
+        }
+
+        private void InitializeParticles()
+        {
+            // Initialize particles with varying sizes and speeds
+            for (int i = 0; i < ParticleCount; i++)
+            {
+                particlePositions[i] = new PointF((float)rand.NextDouble() * ClientSize.Width, 0); // Random X position across the top
+                particleSpeedsX[i] = (float)(rand.NextDouble() * 2 - 1); // Small X movement
+                particleSpeedsY[i] = (float)(rand.NextDouble() * 2 + 2);  // Downward movement
+                particleAngles[i] = rand.Next(360); // Random initial rotation angle
+                particleRotationSpeeds[i] = 1.0f + (float)rand.NextDouble(); // Adjust rotation speed for slower spin
+                particleSizes[i] = (float)(rand.NextDouble() * 4 + 4); // Random size between 4 and 8
+            }
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+            DrawParticles(e.Graphics);
+        }
+
+        private void DrawParticles(Graphics g)
+        {
+            g.SmoothingMode = SmoothingMode.AntiAlias; // Smooth the rendering
+
+            for (int i = 0; i < currentParticleIndex; i++)
+            {
+                // Update particle position and rotation
+                particlePositions[i].X += particleSpeedsX[i];
+                particlePositions[i].Y += particleSpeedsY[i];
+                particleAngles[i] += particleRotationSpeeds[i];
+                if (particleAngles[i] >= 360) particleAngles[i] -= 360;
+
+                // Reset particle position when it goes off the screen
+                if (particlePositions[i].Y > ClientSize.Height || particlePositions[i].X < 0 || particlePositions[i].X > ClientSize.Width)
+                {
+                    particlePositions[i] = new PointF(
+                        (float)rand.NextDouble() * ClientSize.Width, // Random X position across the top
+                        0 // Start from the top of the form
+                    );
+                    particleSpeedsX[i] = (float)(rand.NextDouble() * 2 - 1); // Small X movement
+                    particleSpeedsY[i] = (float)(rand.NextDouble() * 2 + 2); // Downward movement
+                    particleSizes[i] = (float)(rand.NextDouble() * 4 + 4); // Varying size
+                }
+
+                // Draw the diamond sword with sparking effect
+                DrawSword(g, particlePositions[i], particleSizes[i], particleAngles[i], isSparking[i]);
+            }
+        }
+
+        private void DrawSword(Graphics g, PointF position, float size, float angle, bool isSparking)
+        {
+            using (GraphicsPath path = new GraphicsPath())
+            {
+                PointF[] swordPoints = GetSwordPoints(position, size);
+
+                path.AddLines(swordPoints);
+                path.CloseFigure();
+
+                // Apply rotation
+                using (Matrix matrix = new Matrix())
+                {
+                    matrix.RotateAt(angle, position);
+                    path.Transform(matrix);
+                }
+
+                Color borderColor = isSparking ? Color.Cyan : Color.DarkCyan; // Cyan color for diamond sword effect
+                Color fillColor = Color.FromArgb(0, 255, 255); // Light cyan for the fill color
+
+                using (Pen pen = new Pen(borderColor, 2))
+                using (SolidBrush brush = new SolidBrush(fillColor))
+                {
+                    // Draw glow
+                    DrawGlow(g, path, Color.FromArgb(128, borderColor.R, borderColor.G, borderColor.B), size * 1.5f);
+
+                    // Fill and draw the sword
+                    g.FillPath(brush, path);
+                    g.DrawPath(pen, path);
+                }
+            }
+        }
+
+        private void DrawGlow(Graphics g, GraphicsPath path, Color color, float size)
+        {
+            using (GraphicsPath glowPath = (GraphicsPath)path.Clone())
+            {
+                using (Matrix matrix = new Matrix())
+                {
+                    matrix.Scale(size / path.GetBounds().Width, size / path.GetBounds().Height);
+                    matrix.Translate(-path.GetBounds().X, -path.GetBounds().Y);
+                    glowPath.Transform(matrix);
+
+                    using (PathGradientBrush brush = new PathGradientBrush(glowPath))
+                    {
+                        brush.CenterColor = color;
+                        brush.SurroundColors = new Color[] { Color.Transparent };
+                        g.FillPath(brush, glowPath);
+                    }
+                }
+            }
+        }
+
+        private PointF[] GetSwordPoints(PointF center, float size)
+        {
+            // Define the vertices for a basic representation of a diamond sword
+            float width = size / 4;
+            return new PointF[]
+            {
+                new PointF(center.X - width, center.Y - size),  // Top-left
+                new PointF(center.X + width, center.Y - size),  // Top-right
+                new PointF(center.X + width, center.Y),         // Middle-right
+                new PointF(center.X + size, center.Y + size),   // Bottom-right (handle)
+                new PointF(center.X - size, center.Y + size),   // Bottom-left (handle)
+                new PointF(center.X - width, center.Y),         // Middle-left
+                new PointF(center.X - width, center.Y - size)   // Back to Top-left
+            };
+        }
+    }
+}

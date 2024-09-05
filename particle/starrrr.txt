@@ -1,0 +1,200 @@
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Data;
+using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Linq;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+using FalconMemx64;
+using static TestAcrylicBlur.EffectBlur;
+
+namespace BYTEEX
+{
+    public partial class main : Form
+    {
+        private const int ParticleCount = 100;
+        private const int DrawCount = 90; // Number of particles to draw
+        private readonly Random _random = new Random();
+        private readonly PointF[] _particlePositions = new PointF[ParticleCount];
+        private readonly PointF[] _particleTargetPositions = new PointF[ParticleCount];
+        private readonly float[] _particleSpeeds = new float[ParticleCount];
+        private readonly float[] _particleSizes = new float[ParticleCount];
+        private readonly float[] _particleRadii = new float[ParticleCount];
+        private readonly float[] _particleRotations = new float[ParticleCount];
+        private int glowIndex;
+        private Color[] glowColors;
+        private Label colorLabel;
+        private Falcon_Memory Falcon;
+        public main()
+        {
+            InitializeComponent();
+            InitializeParticles();
+            EnableTransparent();
+
+            DoubleBuffered = true;
+
+
+            Timer timer = new Timer
+            {
+                Interval = 3
+            };
+            timer.Tick += (sender, args) =>
+            {
+                UpdateParticles();
+                Invalidate();
+            };
+            timer.Start();
+        }
+        private void UpdateParticles()
+        {
+            Size screenSize = Screen.PrimaryScreen.Bounds.Size;
+            for (int i = 0; i < ParticleCount; i++)
+            {
+                if (_particlePositions[i].X == 0 || _particlePositions[i].Y == 0)
+                {
+                    _particlePositions[i] = new PointF(_random.Next(screenSize.Width + 1), 15f);
+                    _particleSpeeds[i] = 1 + _random.Next(25);
+                    _particleRadii[i] = _random.Next(5);
+                    _particleSizes[i] = 5 + _random.Next(5);
+                    _particleTargetPositions[i] = new PointF(_random.Next(screenSize.Width), screenSize.Height * 2);
+                }
+
+                float deltaTime = 1.0f / 60;
+                _particlePositions[i] = Lerp(_particlePositions[i], _particleTargetPositions[i], deltaTime * (_particleSpeeds[i] / 60));
+                _particleRotations[i] += deltaTime;
+
+                if (_particlePositions[i].Y > screenSize.Height)
+                {
+                    _particlePositions[i] = new PointF(0, 0);
+                    _particleRotations[i] = 7;
+                }
+            }
+        }
+
+        private void InitializeParticles()
+        {
+            Size screenSize = Screen.PrimaryScreen.Bounds.Size;
+            for (int i = 0; i < ParticleCount; i++)
+            {
+                _particlePositions[i] = new PointF(0, 0);
+                _particleTargetPositions[i] = new PointF(_random.Next(screenSize.Width), screenSize.Height * 2);
+
+                _particleSpeeds[i] = 1 + _random.Next(25);
+
+                // Significantly increase the particle size range
+                _particleSizes[i] = 30 + _random.Next(20);  // Larger size range
+                _particleRadii[i] = _random.Next(5);
+                _particleRotations[i] = 0;
+            }
+        }
+
+        private PointF Lerp(PointF start, PointF end, float t)
+        {
+            return new PointF(start.X + (end.X - start.X) * t, start.Y + (end.Y - start.Y) * t);
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+
+            e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.HighQuality;
+
+            for (int i = 0; i < DrawCount; i++)
+            {
+                DrawStarWithGlow(e.Graphics, _particlePositions[i], _particleSizes[i], _particleRotations[i]);
+            }
+        }
+
+
+
+        private void DrawGlowEffect(Graphics graphics, PointF position, float size)
+        {
+            int maxGlowLayers = 10;
+            for (int j = 0; j < maxGlowLayers; j++)
+            {
+                int alpha = 25 - 2 * j;
+                using (Brush glowBrush = new SolidBrush(Color.FromArgb(alpha, 181, 2, 2)))
+                {
+                    // Adjust glow size to match the larger particles
+                    float glowSize = size + j * 4;  // Increased glow size
+                    graphics.FillEllipse(glowBrush, position.X - glowSize / 2, position.Y - glowSize / 2, glowSize, glowSize);
+                }
+            }
+        }
+
+
+
+        private void DrawStarWithGlow(Graphics graphics, PointF position, float size, float rotation)
+        {
+            // Create the star shape path
+            using (GraphicsPath path = new GraphicsPath())
+            {
+                int numPoints = 5;  // Number of star points
+                double angle = Math.PI / numPoints;
+
+                PointF[] points = new PointF[numPoints * 2];
+
+                for (int i = 0; i < numPoints * 2; i++)
+                {
+                    double length = (i % 2 == 0) ? size : size / 2;
+                    points[i] = new PointF(
+                        position.X + (float)(Math.Cos(i * angle + rotation) * length),
+                        position.Y + (float)(Math.Sin(i * angle + rotation) * length)
+                    );
+                }
+
+                path.AddPolygon(points);
+
+                // Draw glow effect around the star shape
+                DrawGlowEffect(graphics, position, size);
+
+                // Draw the star shape
+                using (Brush brush = new SolidBrush(Color.FromArgb(115, 0, 0)))
+                {
+                    graphics.FillPath(brush, path);
+                }
+            }
+        }
+
+
+
+        [DllImport("user32.dll")]
+        internal static extern int SetWindowCompositionAttribute(IntPtr hwnd, ref WindowCompositionAttributeData data);
+
+        private uint _blurOpacity;
+
+        public double BlurOpacity
+        {
+            get { return _blurOpacity; }
+            set { _blurOpacity = (uint)value; EnableTransparent(); }
+        }
+
+        private uint _blurBackgroundColor = 0x6;
+
+        internal void EnableTransparent()
+        {
+
+            var accent = new AccentPolicy();
+            accent.AccentState = AccentState.ACCENT_ENABLE_ACRYLICBLURBEHIND;
+
+            var accentStructSize = Marshal.SizeOf(accent);
+            var accentPtr = Marshal.AllocHGlobal(accentStructSize);
+            Marshal.StructureToPtr(accent, accentPtr, false);
+            var data = new WindowCompositionAttributeData();
+            data.Attribute = WindowCompositionAttribute.WCA_ACCENT_POLICY;
+            data.SizeOfData = accentStructSize;
+            data.Data = accentPtr;
+            SetWindowCompositionAttribute(this.Handle, ref data);
+            Marshal.FreeHGlobal(accentPtr);
+        }
+
+        private void main_Load(object sender, EventArgs e)
+        {
+
+        }
+    }
+}
