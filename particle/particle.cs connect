@@ -1,0 +1,7 @@
+TIMER
+__------
+    Particles._Instance.Invalidate();
+    Particles.MoveCircles(Particles._Particles);
+}
+this.Opacity = 0.8;
+Particles.Setup(this, 40, Color.Red, 1000, Color.White);
