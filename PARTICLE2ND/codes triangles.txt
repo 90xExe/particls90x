@@ -1,0 +1,27 @@
+using zzz;
+
+
+private ParticleTriangle parTriangle;
+
+
+public Form1()
+        {
+            InitializeComponent();
+       
+            parTriangle = new ParticleTriangle(ClientSize.Width, ClientSize.Height, 10, ParticleTriangle.TipoAni.Fija, Color.White);
+
+
+
+
+//timer en true 
+-//intervalo en 30 no mas 
+ private void timer1_Tick(object sender, EventArgs e)
+        {
+            parTriangle.Update();
+            Invalidate();
+
+        }
+  private void panelBorde_Paint(object sender, PaintEventArgs e)
+        {
+            parTriangle.Draw(e.Graphics);
+        }
